@@ -1,0 +1,10 @@
+.idea/
+*.iml
+__MACOSX/
+.DS_Store
+._*
+Thumbs.db
+target/
+.env
+.env.*
+!.env.example
