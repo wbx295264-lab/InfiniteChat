@@ -20,4 +20,11 @@ public interface UserSessionService extends IService<UserSession> {
      * @return 群聊成员数量
      */
     int getGroupMemberCount(Long sessionId);
+
+    /**
+     * 主动失效会话成员列表缓存（建群 / 邀请 / 退群 / 踢人 / 删好友解散单聊后调用）
+     *
+     * @param sessionId 会话ID
+     */
+    void evictSessionMembersCache(Long sessionId);
 }

@@ -34,4 +34,8 @@ public class ChannelManager {
         return CHANNEL_USER_MAP.get(channel);
     }
 
+    public static int onlineCount() {
+        return USER_CHANNEL_MAP.size();
+    }
+
 }

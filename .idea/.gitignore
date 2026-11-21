@@ -6,3 +6,6 @@
 # Datasource local storage ignored files
 /dataSources/
 /dataSources.local.xml
+*/target/
+/InfiniteChat压测前修复方案.md
+/infiniteChat.sql

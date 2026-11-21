@@ -106,6 +106,9 @@ public class GroupServiceImpl implements GroupService {
         // 6. 插入user_session记录并推送Kafka通知
         List<Long> successIds = insertMembersAndPushNotifications(sessionId, session.getName(), validInviteeIds, failedIds);
 
+        // 6.1 成员变更，失效会话成员缓存
+        userSessionService.evictSessionMembersCache(sessionId);
+
         // 7. 构建响应
         InviteGroupResponse response = new InviteGroupResponse();
 

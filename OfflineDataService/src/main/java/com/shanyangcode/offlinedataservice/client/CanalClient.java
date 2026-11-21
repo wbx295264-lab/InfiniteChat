@@ -195,18 +195,18 @@ public class CanalClient implements CommandLineRunner {
 
             String schemaName = entry.getHeader().getSchemaName();
             String tableName = entry.getHeader().getTableName();
-            String fullTableName = schemaName + "." + tableName;
+            // Linux 容器里的 MySQL lower_case_table_names=0，binlog 里 schema 名保留原大小写（InfiniteChat），统一转小写再匹配
+            String fullTableName = (schemaName + "." + tableName).toLowerCase(Locale.ROOT);
 
-            log.info("====== 收到变更: fullTableName={} ======", fullTableName);
+            log.debug("收到变更: fullTableName={}", fullTableName);
 
             if (!MONITOR_TABLES.contains(fullTableName)) {
                 continue;
             }
 
-            System.out.println("表名：" + tableName);
             CanalEntry.EventType eventType = rowChange.getEventType();
 
-            log.info("======> binlog[{}:{}], name[{},{}], eventType: {}", entry.getHeader().getLogfileName(), entry.getHeader().getLogfileOffset(), schemaName, tableName, eventType);
+            log.debug("binlog[{}:{}], name[{},{}], eventType: {}", entry.getHeader().getLogfileName(), entry.getHeader().getLogfileOffset(), schemaName, tableName, eventType);
 
 
             for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
@@ -224,11 +224,11 @@ public class CanalClient implements CommandLineRunner {
         for (CanalEntry.Column column : columns) {
             map.put(column.getName(), column.getValue());
         }
-        log.info("表名：{}，数据：{}", tableName, map);
+        log.debug("表名：{}，数据：{}", tableName, map);
 
         // 1. 构建完整的消息对象
         MessageResponse messageResponse = buildMessageFromMap(map);
-        log.info("消息体：{}", messageResponse);
+        log.debug("消息体：{}", messageResponse);
         storeMessageToRedis(messageResponse);
 
     }

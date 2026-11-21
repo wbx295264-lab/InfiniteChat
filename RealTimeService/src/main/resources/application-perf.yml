@@ -1,0 +1,40 @@
+# 压测 profile：只放与 application.yml 的差异项
+# 启动：--spring.profiles.active=perf
+spring:
+  data:
+    redis:
+      timeout: 2000
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 1000
+            read-timeout: 3000          # 仅群聊场景用到（getUserIdBySessionId）
+            logger-level: none
+
+im:
+  auth:
+    enabled: false                      # 握手改用 X-User-Id 头，不访问 Redis
+  push:
+    concurrency: 6
+  idle:
+    reader-seconds: 3600                # JMeter 接收方只读不写，不发 ping，放宽到 1h
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,threaddump
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        im.push.kafka.delay: true
+      slo:
+        http.server.requests: 20ms,50ms,100ms,200ms,500ms,1s
+  endpoint:
+    health:
+      show-details: always

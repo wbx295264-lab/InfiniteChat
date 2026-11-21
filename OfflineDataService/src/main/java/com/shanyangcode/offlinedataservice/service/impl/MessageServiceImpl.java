@@ -297,7 +297,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, Message>
         }
 
         String result = "没有消息";
-        System.out.println(chatLog.toString().trim());
+        log.debug("会话总结聊天记录: {}", chatLog.toString().trim());
         try {
             result = aiServiceClient.chatSummary(chatLog.toString().trim());
         } catch (Exception e) {

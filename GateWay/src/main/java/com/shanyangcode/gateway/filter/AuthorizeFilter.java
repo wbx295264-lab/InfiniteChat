@@ -11,6 +11,7 @@ import com.shanyangcode.common.utils.JwtUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.core.Ordered;
@@ -34,6 +35,12 @@ public class AuthorizeFilter implements GlobalFilter, Ordered {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    /**
+     * 网关鉴权开关；仅 perf profile 置 false，线上形态不变
+     */
+    @Value("${gateway.auth.enabled:true}")
+    private boolean authEnabled;
+
     // 白名单路径：不需要认证的接口
     private static final List<String> EXCLUDE_PATHS = Arrays.asList(
             "/api/user/login/code",
@@ -45,6 +52,9 @@ public class AuthorizeFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        if (!authEnabled) {
+            return chain.filter(exchange);
+        }
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().value();
 

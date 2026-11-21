@@ -16,6 +16,7 @@ import jakarta.annotation.PreDestroy;
 
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -36,6 +37,18 @@ public class NettyService {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
 
+    /**
+     * 握手是否校验 token；perf profile 置 false，改用 X-User-Id 头
+     */
+    @Value("${im.auth.enabled:true}")
+    private boolean authEnabled;
+
+    /**
+     * 读空闲超时（秒）。客户端 30s 一次 ping，线上 90s；perf profile 放宽到 3600
+     */
+    @Value("${im.idle.reader-seconds:90}")
+    private int readerIdleSeconds;
+
     @PostConstruct
     public void start() throws InterruptedException {
         run();
@@ -53,10 +66,10 @@ public class NettyService {
                     @Override
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         ChannelPipeline channelPipeline = socketChannel.pipeline();
-                        channelPipeline.addLast(new IdleStateHandler(600000, 0, 0));
+                        channelPipeline.addLast(new IdleStateHandler(readerIdleSeconds, 0, 0));
                         channelPipeline.addLast(new HttpServerCodec());
                         channelPipeline.addLast(new HttpObjectAggregator(65536));
-                        channelPipeline.addLast(new WebSocketAuthHeader(stringRedisTemplate));
+                        channelPipeline.addLast(new WebSocketAuthHeader(stringRedisTemplate, authEnabled));
                         channelPipeline.addLast(new WebSocketServerProtocolHandler("/ws/netty"));
                         channelPipeline.addLast(new WebSocketHandel(kafkaTemplate, stringRedisTemplate));
                     }

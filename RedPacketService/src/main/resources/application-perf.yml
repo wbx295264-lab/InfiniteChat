@@ -1,0 +1,39 @@
+# 压测 profile：只放与 application.yml 的差异项
+# 启动：--spring.profiles.active=perf
+server:
+  tomcat:
+    threads:
+      max: 200                # 显式写出默认值，报告里可引用
+      min-spare: 50
+    accept-count: 200
+    max-connections: 10000
+
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 20   # 领取消费者 3 线程 + 详情查询
+      minimum-idle: 5
+      connection-timeout: 3000        # 默认 30s 会把消费者线程挂住 30s，改成快速失败
+      leak-detection-threshold: 5000
+      pool-name: ${spring.application.name}-hikari
+  data:
+    redis:
+      timeout: 2000           # 原 30000，30s 超时等于永不超时
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,threaddump
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        redpacket.receive.kafka.delay: true
+      slo:
+        http.server.requests: 20ms,50ms,100ms,200ms,500ms,1s
+  endpoint:
+    health:
+      show-details: always

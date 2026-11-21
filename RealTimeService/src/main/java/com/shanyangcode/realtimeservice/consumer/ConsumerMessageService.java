@@ -11,6 +11,7 @@ import com.shanyangcode.common.model.vo.MessageResponse;
 import com.shanyangcode.common.utils.FormatDateUtil;
 import com.shanyangcode.realtimeservice.client.AiServiceClient;
 import com.shanyangcode.realtimeservice.client.UserServiceClient;
+import com.shanyangcode.realtimeservice.metrics.ImMetrics;
 import com.shanyangcode.realtimeservice.utils.SnowflakeDynamicUtil;
 import com.shanyangcode.realtimeservice.websocket.ChannelManager;
 import io.netty.channel.Channel;
@@ -20,6 +21,8 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -40,10 +43,19 @@ public class ConsumerMessageService {
     @Resource
     private KafkaTemplate<String, String> kafkaTemplate;
 
+    @Resource
+    private ImMetrics imMetrics;
 
 
-    @KafkaListener(topics = "push-topic", groupId = "infinite-chat-push-group-0")
-    public void consume(String message) {
+    /**
+     * push-topic 以 sessionId 为 key 分区，同会话消息永远在同一分区、同一线程，多线程消费不打乱会话内顺序。
+     * concurrency 不应超过分区数（见 MessageTopicConfig）。
+     */
+    @KafkaListener(topics = "push-topic", groupId = "infinite-chat-push-group-0", concurrency = "${im.push.concurrency:6}")
+    public void consume(String message, @Header(KafkaHeaders.RECEIVED_TIMESTAMP) long producedAt) {
+        // producedAt 是 producer 打的 CreateTime（毫秒），同机压测时钟一致，可直接相减
+        imMetrics.recordKafkaDelay(System.currentTimeMillis() - producedAt);
+
         MessageRequest messageRequest = JSONUtil.toBean(message, MessageRequest.class);
         if (messageRequest.getSessionType() == SessionTypeConstant.SIGNAL_TYPE) {
             signalMessage(messageRequest);
@@ -72,16 +84,11 @@ public class ConsumerMessageService {
         messageResponse.setSenderId(CommonConstant.AI_ID);
 
         pushMessageToUser(messageResponse, chatRequest.getUserId());
-        BeanUtil.copyProperties(messageResponse,messageRequest);
+        BeanUtil.copyProperties(messageResponse, messageRequest);
 
         kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, JSONUtil.toJsonStr(messageRequest)).whenComplete((success, failure) -> {
             if (failure != null) {
-                // 生产者生产失败
-                System.err.println("生产者生产失败: " + failure.getMessage());
-                // 记录日志、告警、补偿等
-            } else {
-                // 生产者生产成功
-                System.out.println("生产者生产成功，offset: " + success.getRecordMetadata().offset());
+                log.error("Kafka 发送失败 topic={}, messageId={}", CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, messageRequest.getMessageId(), failure);
             }
         });
     }
@@ -90,17 +97,18 @@ public class ConsumerMessageService {
 
     public void signalMessage(MessageRequest messageRequest) {
         MessageResponse messageResponse = createMessageResponse(messageRequest);
-        pushMessageToUser(messageResponse, messageRequest.getSenderId());
-        pushMessageToUser(messageResponse, messageRequest.getReceiverId());
-        log.info(messageRequest.getSenderId() + " " + messageRequest.getReceiverId());
-
+        String payload = JSONUtil.toJsonStr(messageResponse);
+        pushMessageToUser(payload, messageRequest.getSenderId());
+        pushMessageToUser(payload, messageRequest.getReceiverId());
     }
 
     public void groupMessage(MessageRequest messageRequest) {
         List<Long> receiveUserIds = userServiceClient.getUserIdBySessionId(messageRequest.getSessionId());
         MessageResponse messageResponse = createMessageResponse(messageRequest);
+        // 序列化一次，frame 每个成员各 new 一个（写出后会被 release，不能复用）
+        String payload = JSONUtil.toJsonStr(messageResponse);
         for (Long receiveUserId : receiveUserIds) {
-            pushMessageToUser(messageResponse, receiveUserId);
+            pushMessageToUser(payload, receiveUserId);
         }
     }
 
@@ -112,19 +120,24 @@ public class ConsumerMessageService {
     }
 
     public void pushMessageToUser(MessageResponse messageResponse, Long receiverId) {
+        pushMessageToUser(JSONUtil.toJsonStr(messageResponse), receiverId);
+    }
+
+    public void pushMessageToUser(String payload, Long receiverId) {
         Channel channel = ChannelManager.getChannelByUserId(receiverId.toString());
-        if (channel != null) {
-            TextWebSocketFrame frame = new TextWebSocketFrame(JSONUtil.toJsonStr(messageResponse));
-            channel.writeAndFlush(frame).addListener((ChannelFutureListener) future -> {
-                if (future.isSuccess()) {
-                    log.info("消息发送成功: {}", messageResponse);
-                } else {
-                    log.info("消息发送失败: {}", future.cause() != null ? future.cause().getMessage() : "未知错误");
-                }
-            });
-        } else {
-            log.info("channel 不存在");
+        if (channel == null) {
+            imMetrics.pushMiss();
+            return;
         }
+        channel.writeAndFlush(new TextWebSocketFrame(payload)).addListener((ChannelFutureListener) future -> {
+            if (future.isSuccess()) {
+                imMetrics.pushOk();
+            } else {
+                imMetrics.pushFail();
+                log.warn("推送失败 receiverId={}, cause={}", receiverId,
+                        future.cause() == null ? "unknown" : future.cause().getMessage());
+            }
+        });
     }
 
 }

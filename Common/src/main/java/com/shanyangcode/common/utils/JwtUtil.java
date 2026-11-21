@@ -25,7 +25,6 @@ public final class JwtUtil {
         Date now = new Date();
         //设置过期时间
         Date expiration = new Date(now.getTime() + unit.toMillis(timeout));
-        System.out.println(expiration);
         return Jwts.builder()
                 .setSubject(userId) // 存储用户唯一标识（如手机号/用户ID）
                 .setIssuedAt(now) // 签发时间

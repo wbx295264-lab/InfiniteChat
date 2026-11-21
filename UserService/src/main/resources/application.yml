@@ -9,22 +9,12 @@ spring:
     password: ${MYSQL_PASSWORD}
   data:
     redis:
-      database: 2
+      database: 0
       host: localhost
       port: 59000
       password: ${REDIS_PASSWORD}
       timeout: 30000
-      # 配置 redis 连接池
-      lettuce:
-        pool:
-          # 链接池中最小的空闲链接 默认为 0
-          min-idle: 4
-          # 链接池中最大的空闲连接 默认为 8
-          max-idle: 8
-          #连接池中最大数据库链接数 默认为 8
-          max-active: 8
-          #连接池最大阻塞等待时间
-          max-wait: 5000ms
+      # 未引入 commons-pool2，lettuce.pool 配置不会生效，已删除；当前为 Lettuce 单共享连接（非池化）
   mail:
     host: smtp.qq.com
     port: 587
@@ -56,8 +46,6 @@ spring:
       discovery:
         server-addr: localhost:18375
 mybatis-plus:
-  configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
       logic-delete-field: isDelete # 全局逻辑删除的实体字段名

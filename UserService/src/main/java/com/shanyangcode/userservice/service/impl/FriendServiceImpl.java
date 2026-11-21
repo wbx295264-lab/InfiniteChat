@@ -556,6 +556,7 @@ public class FriendServiceImpl extends ServiceImpl<FriendMapper, Friend> impleme
                 LambdaQueryWrapper<UserSession> wrapper = new LambdaQueryWrapper<>();
                 wrapper.in(UserSession::getSessionId, singleChatSessionIds);
                 userSessionMapper.delete(wrapper);
+                singleChatSessionIds.forEach(userSessionService::evictSessionMembersCache);
 
                 // 5. 删除会话
                 LambdaQueryWrapper<Session> sessionDeleteWrapper = new LambdaQueryWrapper<>();

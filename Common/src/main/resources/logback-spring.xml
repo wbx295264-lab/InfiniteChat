@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Common 在所有服务 classpath 根上，这一份对全部服务生效。
+  - 非 perf profile：保持 Spring Boot 默认控制台输出
+  - perf profile：只写文件、异步、绝不阻塞业务线程；根级别 WARN
+-->
+<configuration>
+    <springProperty scope="context" name="app" source="spring.application.name" defaultValue="app"/>
+
+    <springProfile name="!perf">
+        <include resource="org/springframework/boot/logging/logback/base.xml"/>
+    </springProfile>
+
+    <springProfile name="perf">
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/${app}.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/${app}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>3</maxHistory>
+            </rollingPolicy>
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+            <queueSize>8192</queueSize>
+            <!-- 队列满时不丢 WARN/ERROR -->
+            <discardingThreshold>0</discardingThreshold>
+            <!-- 宁可丢 INFO 也不阻塞业务线程 -->
+            <neverBlock>true</neverBlock>
+            <appender-ref ref="FILE"/>
+        </appender>
+        <root level="WARN">
+            <appender-ref ref="ASYNC"/>
+        </root>
+        <logger name="com.shanyangcode" level="WARN"/>
+        <logger name="org.apache.kafka" level="WARN"/>
+        <logger name="com.alibaba.nacos" level="WARN"/>
+    </springProfile>
+</configuration>

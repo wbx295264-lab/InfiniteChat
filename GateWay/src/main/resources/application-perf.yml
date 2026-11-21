@@ -1,0 +1,10 @@
+# 压测 profile：本轮两个被测接口均不经网关，此文件仅为保持各服务形态一致
+# 启动：--spring.profiles.active=perf
+spring:
+  data:
+    redis:
+      timeout: 2000
+
+gateway:
+  auth:
+    enabled: false

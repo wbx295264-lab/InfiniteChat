@@ -14,10 +14,8 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.SendResult;
 
 import java.util.Date;
-import java.util.concurrent.CompletableFuture;
 
 
 @Slf4j
@@ -66,14 +64,18 @@ public class WebSocketHandel extends SimpleChannelInboundHandler<TextWebSocketFr
         if (evt instanceof IdleStateEvent event) {
             switch (event.state()) {
                 case READER_IDLE:
-                    log.error("读空闲超时");
+                    log.warn("读空闲超时, channel={}", ctx.channel().id());
                     clearChannel(ctx.channel());
                     ctx.close();
                     break;
                 case WRITER_IDLE:
-                    log.error("写空闲超时");
+                    log.warn("写空闲超时, channel={}", ctx.channel().id());
+                    break;
                 case ALL_IDLE:
-                    log.error("读写空闲超时");
+                    log.warn("读写空闲超时, channel={}", ctx.channel().id());
+                    break;
+                default:
+                    break;
             }
         }
     }
@@ -83,30 +85,20 @@ public class WebSocketHandel extends SimpleChannelInboundHandler<TextWebSocketFr
         MessageRequest messageRequest = JSONUtil.toBean(message, MessageRequest.class);
         messageRequest.setMessageId(SnowflakeDynamicUtil.nextId());
         messageRequest.setCreatedTime(new Date());
+        String payload = JSONUtil.toJsonStr(messageRequest);
 
         // 消息存储, 存储只存储一次，避免重复消费
-        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, JSONUtil.toJsonStr(messageRequest)).whenComplete((success, failure) -> {
+        // 回调运行在 kafka-producer-network-thread 上，只记失败，成功分支不打日志
+        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, payload).whenComplete((success, failure) -> {
             if (failure != null) {
-                // 生产者生产失败
-                System.err.println("生产者生产失败: " + failure.getMessage());
-                // 记录日志、告警、补偿等
-            } else {
-                // 生产者生产成功
-                System.out.println("生产者生产成功，offset: " + success.getRecordMetadata().offset());
+                log.error("Kafka 发送失败 topic={}, messageId={}", CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, messageRequest.getMessageId(), failure);
             }
         });
 
-
-
-        // 消息推送消息
-        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_PUSH, messageRequest.getSessionId().toString(), JSONUtil.toJsonStr(messageRequest)).whenComplete((success, failure) -> {
+        // 消息推送消息，以 sessionId 为 key 保证同会话顺序
+        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_PUSH, messageRequest.getSessionId().toString(), payload).whenComplete((success, failure) -> {
             if (failure != null) {
-                // 生产者生产失败
-                System.err.println("生产者生产失败: " + failure.getMessage());
-                // 记录日志、告警、补偿等
-            } else {
-                // 生产者生产成功
-                System.out.println("生产者生产成功消息推送，offset: " + success.getRecordMetadata().offset());
+                log.error("Kafka 发送失败 topic={}, messageId={}", CommonConstant.KAFKA_MESSAGE_TOPIC_PUSH, messageRequest.getMessageId(), failure);
             }
         });
     }
@@ -120,31 +112,9 @@ public class WebSocketHandel extends SimpleChannelInboundHandler<TextWebSocketFr
 
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        super.channelActive(ctx);
-
-        System.out.println("channel active");
-    }
-
-
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        // clearChannel(ctx.channel());
-        super.channelInactive(ctx);
-        System.out.println("channel inActive");
-    }
-
-    @Override
-    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
-        super.handlerAdded(ctx);
-        System.out.println("handler added");
-    }
-
-    @Override
     public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
         clearChannel(ctx.channel());
         super.handlerRemoved(ctx);
-        System.out.println("handler removed");
     }
 
 
@@ -152,7 +122,6 @@ public class WebSocketHandel extends SimpleChannelInboundHandler<TextWebSocketFr
         if (channel == null) {
             return;
         }
-        System.out.println("clearChannel: " + channel.id());
         String userId = ChannelManager.getUserIdByChannel(channel);
         try {
             if (userId != null) {

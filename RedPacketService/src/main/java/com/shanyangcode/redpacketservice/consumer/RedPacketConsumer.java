@@ -1,5 +1,6 @@
 package com.shanyangcode.redpacketservice.consumer;
 
+import java.time.Duration;
 import java.util.Map;
 
 import com.shanyangcode.redpacketservice.config.KafkaConfig;
@@ -8,9 +9,14 @@ import com.shanyangcode.redpacketservice.model.dto.RedPacketReceiveEvent;
 import com.shanyangcode.redpacketservice.service.RedPacketService;
 
 import cn.hutool.json.JSONUtil;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,6 +32,18 @@ public class RedPacketConsumer {
 
     @Autowired
     private RedPacketService redPacketService;
+
+    /**
+     * 领取事件在 topic-redpacket-receive 中排队 + 被消费者取到的时间（领取到记账的排队时间）
+     */
+    private final Timer receiveKafkaDelay;
+
+    public RedPacketConsumer(MeterRegistry registry) {
+        this.receiveKafkaDelay = Timer.builder("redpacket.receive.kafka.delay")
+                .description("topic-redpacket-receive 排队 + 拉取耗时")
+                .publishPercentileHistogram()
+                .register(registry);
+    }
 
     /**
      * 消费红包领取事件
@@ -46,16 +64,23 @@ public class RedPacketConsumer {
      * 1. 插入领取记录到数据库
      * 2. 增加用户余额
      * 3. 记录余额变动日志
+     * <p>
+     * 异常策略：
+     * - 报文格式错误 / 字段缺失：脏消息，重试无意义，直接丢弃
+     * - DuplicateKeyException：重复投递被唯一索引拦截，属预期，记 WARN
+     * - 其他异常（Hikari 超时、死锁等）：抛出，交给 DefaultErrorHandler 重试，最终进 topic-redpacket-receive.DLT
      *
-     * @param message Kafka消息
+     * @param message    Kafka消息
+     * @param producedAt producer 打的 CreateTime（毫秒）
      */
     @KafkaListener(
             topics = KafkaConfig.TOPIC_REDPACKET_RECEIVE,
             groupId = KafkaConstant.GROUP_RECEIVE_HANDLER,
             concurrency = KafkaConstant.DEFAULT_CONCURRENCY
     )
-    public void handleRedPacketReceive(String message) {
-        log.info("收到红包领取事件: {}", message);
+    public void handleRedPacketReceive(String message, @Header(KafkaHeaders.RECEIVED_TIMESTAMP) long producedAt) {
+        receiveKafkaDelay.record(Duration.ofMillis(Math.max(System.currentTimeMillis() - producedAt, 0)));
+        log.debug("收到红包领取事件: {}", message);
 
         // 1. 反序列化：报文格式错误属于脏消息，重试也不会成功，直接丢弃避免阻塞分区
         RedPacketReceiveEvent event;
@@ -83,13 +108,15 @@ public class RedPacketConsumer {
                 ? event.getReceiveTime()
                 : System.currentTimeMillis();
 
-        // 3. 业务处理：这里的失败（如数据库抖动）才是可重试的
+        // 3. 业务处理
         try {
             redPacketService.handleRedPacketReceive(userId, redPacketId, receivedAmount, receiveTime);
-            log.info("红包领取事件处理成功，红包ID: {}, 用户ID: {}", redPacketId, userId);
+            log.debug("红包领取事件处理成功，红包ID: {}, 用户ID: {}", redPacketId, userId);
+        } catch (DuplicateKeyException e) {
+            log.warn("红包领取事件重复投递，唯一索引已拦截。redPacketId={}, userId={}", redPacketId, userId);
         } catch (Exception e) {
-            log.error("处理红包领取事件失败，红包ID: {}, 用户ID: {}", redPacketId, userId, e);
-            // 如需交给 Kafka 重试，在此处 throw new RuntimeException(e);
+            log.error("处理红包领取事件失败，交给 Kafka 重试。红包ID: {}, 用户ID: {}", redPacketId, userId, e);
+            throw e;
         }
     }
 

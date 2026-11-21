@@ -350,26 +350,18 @@ public class RedPacketServiceImpl implements RedPacketService {
         checkMessage(messageRequest.getSessionType(), messageRequest.getReceiverId());
 
         // 消息存储, 存储只存储一次，避免重复消费
-        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, JSONUtil.toJsonStr(messageRequest)).whenComplete((success, failure) -> {
+        // 回调运行在 kafka-producer-network-thread 上，只记失败，成功分支不打日志
+        String payload = JSONUtil.toJsonStr(messageRequest);
+        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, payload).whenComplete((success, failure) -> {
             if (failure != null) {
-                // 生产者生产失败
-                System.err.println("生产者生产失败: " + failure.getMessage());
-                // 记录日志、告警、补偿等
-            } else {
-                // 生产者生产成功
-                System.out.println("生产者生产成功，offset: " + success.getRecordMetadata().offset());
+                log.error("Kafka 发送失败 topic={}, messageId={}", CommonConstant.KAFKA_MESSAGE_TOPIC_STORE, messageId, failure);
             }
         });
 
         // 消息推送消息
-        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_PUSH, messageRequest.getSessionId().toString(), JSONUtil.toJsonStr(messageRequest)).whenComplete((success, failure) -> {
+        kafkaTemplate.send(CommonConstant.KAFKA_MESSAGE_TOPIC_PUSH, messageRequest.getSessionId().toString(), payload).whenComplete((success, failure) -> {
             if (failure != null) {
-                // 生产者生产失败
-                System.err.println("生产者生产失败: " + failure.getMessage());
-                // 记录日志、告警、补偿等
-            } else {
-                // 生产者生产成功
-                System.out.println("生产者生产成功，offset: " + success.getRecordMetadata().offset());
+                log.error("Kafka 发送失败 topic={}, messageId={}", CommonConstant.KAFKA_MESSAGE_TOPIC_PUSH, messageId, failure);
             }
         });
 
@@ -560,7 +552,7 @@ public class RedPacketServiceImpl implements RedPacketService {
             kafkaTemplate.send(KafkaConfig.TOPIC_REDPACKET_COMPLETED, JSONUtil.toJsonStr(completedEvent));
         }
 
-        log.info("用户 {} 领取红包 {} 成功，金额: {}", userId, redPacketId, amount);
+        log.debug("用户 {} 领取红包 {} 成功，金额: {}", userId, redPacketId, amount);
 
         return vo;
     }
@@ -612,7 +604,7 @@ public class RedPacketServiceImpl implements RedPacketService {
         // 3. 记录余额变动日志
         recordBalanceLog(userId, receivedAmount, BalanceLogConstant.TYPE_RECEIVE, redPacketId);
 
-        log.info("红包领取记录处理完成。红包ID: {}, 用户ID: {}, 金额: {}", redPacketId, userId, receivedAmount);
+        log.debug("红包领取记录处理完成。红包ID: {}, 用户ID: {}, 金额: {}", redPacketId, userId, receivedAmount);
     }
 
 

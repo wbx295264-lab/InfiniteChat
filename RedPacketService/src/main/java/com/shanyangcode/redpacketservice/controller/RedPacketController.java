@@ -49,13 +49,13 @@ public class RedPacketController {
      */
     @PostMapping("/receive")
     public BaseResponse<ReceiveResultVO> receiveRedPacket(@Valid @RequestBody RedPacketReceiveRequest request) {
-        log.info("领取红包请求，用户ID: {}, 红包ID: {}",
+        log.debug("领取红包请求，用户ID: {}, 红包ID: {}",
                 request.getUserId(),
                 request.getRedPacketId());
 
         ReceiveResultVO result = redPacketService.receiveRedPacket(request);
 
-        log.info("红包领取处理完成，用户ID: {}, 状态: {}, 金额: {}",
+        log.debug("红包领取处理完成，用户ID: {}, 状态: {}, 金额: {}",
                 request.getUserId(),
                 result.getStatus(),
                 result.getAmount());
