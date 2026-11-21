@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile default="true" name="Default" enabled="true" />
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <module name="UserService" />
+        <module name="GateWay" />
+        <module name="OfflineDataService" />
+        <module name="AiService" />
+        <module name="RealTimeService" />
+        <module name="RedPacketService" />
+        <module name="Common" />
+      </profile>
+    </annotationProcessing>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="AiService" options="-parameters" />
+      <module name="Common" options="-parameters" />
+      <module name="GateWay" options="-parameters" />
+      <module name="OfflineDataService" options="-parameters" />
+      <module name="RealTimeService" options="-parameters" />
+      <module name="RedPacketService" options="-parameters" />
+      <module name="UserService" options="-parameters" />
+    </option>
+  </component>
+</project>
